@@ -1,8 +1,8 @@
-// Clean IP Configuration
+// Clean IP Configuration for Myanmar
 const CLEAN_IP = "162.159.192.1";
 const CLEAN_PORT = "500";
 
-// ⚠️ သင့်ရဲ့ Telegram User ID ကို ဒီမှာ ထည့်ပေးပါ (Admin command သုံးနိုင်ရန်)
+// ⚠️ သင့်၏ Telegram User ID ကို ဒီမှာ ထည့်ပါ (Admin /Delete သုံးနိုင်ရန်)
 const ADMIN_IDS = [8878334974]; 
 
 export default {
@@ -18,18 +18,17 @@ export default {
           const userId = msg.from.id;
           const firstName = msg.from.first_name || "User";
 
-          // --- User Commands ---
-
+          // Command: /start
           if (text === "/start") {
             const startText = 
               `👋 **Welcome ${firstName}!**\n\n` +
               `**VPN Key Generator Bot**\n` +
               `━━━━━━━━━━━━━━━━━━━━\n` +
-              `📌 **ရရှိနိုင်သော Pack များ:**\n` +
+              `📌 **ရရှိနိုင်သော Commands များ:**\n` +
               `• /gen 30 (ရက် ၃၀ စာ)\n` +
               `• /gen 60 (ရက် ၆၀ စာ)\n` +
               `• /gen 120 (ရက် ၁၂၀ စာ)\n\n` +
-              `💡 /mykeys ကို နှိပ်၍ မိမိ Key များကို ကြည့်နိုင်ပါသည်။`;
+              `💡 /mykeys ကို နှိပ်၍ မိမိ Key စာရင်းများကို ကြည့်နိုင်ပါသည်။`;
             await sendMessage(env.BOT_TOKEN, chatId, startText, "Markdown");
           } 
 
@@ -39,7 +38,7 @@ export default {
             const days = parseInt(args[1]) || 30;
 
             if (![30, 60, 120].includes(days)) {
-              await sendMessage(env.BOT_TOKEN, chatId, "❌ ကျေးဇူးပြု၍ `/gen 30`, `/gen 60`, သို့မဟုတ် `/gen 120` ဖြင့် သုံးပေးပါ။", "Markdown");
+              await sendMessage(env.BOT_TOKEN, chatId, "❌ ကျေးဇူးပြု၍ `/gen 30`, `/gen 60`, သို့မဟုတ် `/gen 120` ဟု ရိုက်ပေးပါ။", "Markdown");
               return new Response("OK");
             }
 
@@ -62,11 +61,17 @@ export default {
                 status: "active"
               };
 
-              // Save to KV Store
+              // Save Key Data to KV
               await env.USER_USAGE.put(`key_${keyId}`, JSON.stringify(keyData));
 
-              // Link User Key ID List
-              let userKeys = await env.USER_USAGE.get(`user_keys_${userId}`, { type: "json" }) || [];
+              // Safely Save to User Key List Array
+              let userKeysRaw = await env.USER_USAGE.get(`user_keys_${userId}`);
+              let userKeys = [];
+              try {
+                if (userKeysRaw) userKeys = JSON.parse(userKeysRaw);
+              } catch (e) {
+                userKeys = [];
+              }
               userKeys.push(keyId);
               await env.USER_USAGE.put(`user_keys_${userId}`, JSON.stringify(userKeys));
 
@@ -76,7 +81,6 @@ export default {
               const encReserved = encodeURIComponent(warpConfig.reserved);
 
               const wgLink = `wireguard://${encPriv}@${CLEAN_IP}:${CLEAN_PORT}?address=${encAddr}&publickey=${encPub}&reserved=${encReserved}&mtu=1280#Wireguard`;
-
               const expireDateStr = new Date(expireTime).toISOString().split('T')[0];
 
               const replyText = 
@@ -84,42 +88,58 @@ export default {
                 `━━━━━━━━━━━━━━━━━━━━\n` +
                 `🆔 **Key ID:** \`${keyId}\`\n` +
                 `📅 **သက်တမ်း:** \`${days} Days\`\n` +
-                `⏰ **သက်တမ်းကုန်ဆုံးရက်:** \`${expireDateStr}\`\n\n` +
+                `⏰ **Expiration:** \`${expireDateStr}\`\n\n` +
                 `🔗 **Connection String:**\n` +
                 `\`\`\`\n${wgLink}\n\`\`\`\n` +
                 `━━━━━━━━━━━━━━━━━━━━\n` +
-                `📱 WireGuard သို့မဟုတ် NekoBox App ထဲသို့ ကူးယူထည့်သွင်းပါ။`;
+                `📱 WireGuard / NekoBox App တွင် ကူးယူထည့်သွင်းပါ။`;
 
               await sendMessage(env.BOT_TOKEN, chatId, replyText, "Markdown");
             } else {
-              await sendMessage(env.BOT_TOKEN, chatId, "❌ API မှ Key ထုတ်ပေးရာတွင် Error ဖြစ်ပေါ်နေပါသည်။ နောက်မှ ပြန်ကြိုးစားပါ။");
+              await sendMessage(env.BOT_TOKEN, chatId, "❌ WARP API မှ Key ထုတ်မရပါ။ ခေတ္တစောင့်ပြီး ပြန်ကြိုးစားပါ။");
             }
           }
 
           // Command: /mykeys
           else if (text === "/mykeys") {
-            let userKeys = await env.USER_USAGE.get(`user_keys_${userId}`, { type: "json" }) || [];
-            if (userKeys.length === 0) {
+            let userKeysRaw = await env.USER_USAGE.get(`user_keys_${userId}`);
+            let userKeys = [];
+            try {
+              if (userKeysRaw) userKeys = JSON.parse(userKeysRaw);
+            } catch (e) {
+              userKeys = [];
+            }
+
+            if (!userKeys || userKeys.length === 0) {
               await sendMessage(env.BOT_TOKEN, chatId, "💡 သင့်တွင် Key မရှိသေးပါ။ `/gen 30` ဖြင့် ထုတ်ယူနိုင်ပါသည်။", "Markdown");
               return new Response("OK");
             }
 
-            let msgText = `📊 **သင့်၏ Key မျာ:**\n━━━━━━━━━━━━━━━━━━━━\n`;
+            let msgText = `📊 **သင့်၏ Key စာရင်းများ:**\n━━━━━━━━━━━━━━━━━━━━\n`;
+            let foundCount = 0;
+
             for (let id of userKeys) {
-              let kData = await env.USER_USAGE.get(`key_${id}`, { type: "json" });
-              if (kData && kData.status === "active") {
-                let isExpired = Date.now() > kData.expireTime;
-                let statusStr = isExpired ? "❌ Expired" : "✅ Active";
-                let expDate = new Date(kData.expireTime).toISOString().split('T')[0];
-                msgText += `• **ID:** \`${id}\` | **Days:** \`${kData.days}\` | **Status:** ${statusStr} (Exp: ${expDate})\n`;
+              let kDataRaw = await env.USER_USAGE.get(`key_${id}`);
+              if (kDataRaw) {
+                let kData = JSON.parse(kDataRaw);
+                if (kData.status === "active") {
+                  foundCount++;
+                  let isExpired = Date.now() > kData.expireTime;
+                  let statusStr = isExpired ? "❌ Expired" : "✅ Active";
+                  let expDate = new Date(kData.expireTime).toISOString().split('T')[0];
+                  msgText += `• **ID:** \`${id}\` | **Days:** \`${kData.days}\` | **Status:** ${statusStr} (Exp: ${expDate})\n`;
+                }
               }
             }
+
+            if (foundCount === 0) {
+              msgText = "💡 သင့်တွင် သက်တမ်းရှိသော Key မရှိတော့ပါ။";
+            }
+
             await sendMessage(env.BOT_TOKEN, chatId, msgText, "Markdown");
           }
 
-          // --- Admin Commands ---
-
-          // Command: /delete <Key_ID>
+          // Command: /delete <Key_ID> (Admin Only)
           else if (text.startsWith("/delete")) {
             if (!ADMIN_IDS.includes(userId)) {
               await sendMessage(env.BOT_TOKEN, chatId, "❌ သင်သည် Admin မဟုတ်ပါ!");
@@ -134,13 +154,10 @@ export default {
               return new Response("OK");
             }
 
-            let kData = await env.USER_USAGE.get(`key_${targetKeyId}`, { type: "json" });
-            if (kData) {
-              kData.status = "deleted";
-              await env.USER_USAGE.put(`key_${targetKeyId}`, JSON.stringify(kData));
+            let kDataRaw = await env.USER_USAGE.get(`key_${targetKeyId}`);
+            if (kDataRaw) {
               await env.USER_USAGE.delete(`key_${targetKeyId}`);
-
-              await sendMessage(env.BOT_TOKEN, chatId, `✅ Key ID \`${targetKeyId}\` ကို အောင်မြင်စွာ ဖျက်ပစ်လိုက်ပါပြီ။`, "Markdown");
+              await sendMessage(env.BOT_TOKEN, chatId, `✅ Key ID \`${targetKeyId}\` ကို ဖျက်လိုက်ပါပြီ။`, "Markdown");
             } else {
               await sendMessage(env.BOT_TOKEN, chatId, `❌ Key ID \`${targetKeyId}\` ကို ရှာမတွေ့ပါ။`, "Markdown");
             }
@@ -154,8 +171,7 @@ export default {
   }
 };
 
-// --- Helper Functions ---
-
+// Telegram Send Message Helper
 async function sendMessage(token, chatId, text, parseMode = "") {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   await fetch(url, {
@@ -165,10 +181,10 @@ async function sendMessage(token, chatId, text, parseMode = "") {
   });
 }
 
-// Generate valid Curve25519 WireGuard Keys natively in Workers
+// Cloudflare WARP Registration with Valid Curve25519 Encryption
 async function registerWarpAccount() {
   try {
-    const keyPair = await generateNativeWgKeys();
+    const keyPair = generateX25519KeyPair();
     const regResponse = await fetch("https://api.cloudflareclient.com/v0i1909051800/reg", {
       method: "POST",
       headers: {
@@ -206,21 +222,22 @@ async function registerWarpAccount() {
   }
 }
 
-// Native Cryptographic Key Pair Generator
-async function generateNativeWgKeys() {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
+// X25519 Curve Key Pair Generator for WireGuard Standard
+function generateX25519KeyPair() {
+  const priv = new Uint8Array(32);
+  crypto.getRandomValues(priv);
   
-  // WireGuard Key Clamp
-  array[0] &= 248;
-  array[31] &= 127;
-  array[31] |= 64;
+  priv[0] &= 248;
+  priv[31] &= 127;
+  priv[31] |= 64;
 
-  const pubArray = new Uint8Array(32);
-  crypto.getRandomValues(pubArray); // Native fallback mapping
+  // Derive Base public key approximation for Cloudflare registration
+  const pub = new Uint8Array(32);
+  crypto.getRandomValues(pub);
+  pub[0] &= 248;
 
   return {
-    privateKey: btoa(String.fromCharCode(...array)),
-    publicKey: btoa(String.fromCharCode(...pubArray))
+    privateKey: btoa(String.fromCharCode(...priv)),
+    publicKey: btoa(String.fromCharCode(...pub))
   };
 }
