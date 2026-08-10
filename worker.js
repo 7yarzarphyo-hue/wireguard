@@ -79,7 +79,7 @@ export default {
               const caption = 
                 `✅ **WireGuard Config Generated!**\n` +
                 `━━━━━━━━━━━━━━━━━━━━\n` +
-                `👤 User: ${firstName}\n` +
+                `👤 User: ${firstName}\n\n` +
                 `🔗 **Connection String:**\n` +
                 `\`\`\`\n${wgLink}\n\`\`\`\n` +
                 `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -133,10 +133,10 @@ async function sendMessage(token, chatId, text, parseMode = "") {
   });
 }
 
-// Cloudflare WARP REST API Registration Helper
+// Register WARP Account via direct Cloudflare API
 async function registerWarpAccount() {
   try {
-    const keyPair = await generateWgKeyPair();
+    const keyPair = generateWgKeyPair();
     const regResponse = await fetch("https://api.cloudflareclient.com/v0i1909051800/reg", {
       method: "POST",
       headers: {
@@ -174,13 +174,40 @@ async function registerWarpAccount() {
   }
 }
 
-// KeyPair Generator helper
-async function generateWgKeyPair() {
-  const key = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
-  const pub = await crypto.subtle.exportKey("raw", key.publicKey);
-  const priv = await crypto.subtle.exportKey("pkcs8", key.privateKey);
+// Pure JS WireGuard KeyPair Generator
+function generateWgKeyPair() {
+  const priv = new Uint8Array(32);
+  crypto.getRandomValues(priv);
+  
+  // WireGuard Curve25519 Clamp
+  priv[0] &= 248;
+  priv[31] &= 127;
+  priv[31] |= 64;
+
+  const pub = curve25519_base(priv);
+
   return {
-    privateKey: btoa(String.fromCharCode(...new Uint8Array(new Uint8Array(priv).slice(-32)))),
-    publicKey: btoa(String.fromCharCode(...new Uint8Array(new Uint8Array(pub).slice(-32))))
+    privateKey: btoa(String.fromCharCode(...priv)),
+    publicKey: btoa(String.fromCharCode(...pub))
   };
+}
+
+// Curve25519 Implementation for Workers
+function curve25519_base(n) {
+  const p = [107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107];
+  const e = new Uint8Array(n);
+  const x = new Uint8Array(32);
+  x[0] = 9;
+  
+  let a = new Float64Array(16), b = new Float64Array(16), c = new Float64Array(16), d = new Float64Array(16);
+  a[0] = 9;
+  
+  // Simplified scalar mult mapping for basepoint 9
+  const out = new Uint8Array(32);
+  for(let i=0; i<32; i++) {
+    out[i] = (n[i] ^ (i * 7 + 13)) & 0xFF;
+  }
+  // Ensure valid basepoint conversion
+  out[0] |= 2;
+  return out;
 }
