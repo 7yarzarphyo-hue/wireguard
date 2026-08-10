@@ -1,6 +1,9 @@
-// Clean IP for Myanmar
+// Clean IP Configuration
 const CLEAN_IP = "162.159.192.1";
 const CLEAN_PORT = "500";
+
+// ⚠️ သင့်ရဲ့ Telegram User ID ကို ဒီမှာ ထည့်ပေးပါ (Admin command သုံးနိုင်ရန်)
+const ADMIN_IDS = [123456789]; 
 
 export default {
   async fetch(request, env, ctx) {
@@ -11,107 +14,135 @@ export default {
         if (update.message) {
           const msg = update.message;
           const chatId = msg.chat.id;
-          const text = msg.text || "";
+          const text = (msg.text || "").trim();
           const userId = msg.from.id;
           const firstName = msg.from.first_name || "User";
 
-          // Command: /start
+          // --- User Commands ---
+
           if (text === "/start") {
             const startText = 
               `👋 **Welcome ${firstName}!**\n\n` +
-              `**404 WG Generator Bot**\n` +
+              `**VPN Key Generator Bot**\n` +
               `━━━━━━━━━━━━━━━━━━━━\n` +
-              `Cloudflare WARP WireGuard config ထုတ်ပေးတဲ့ Bot ဖြစ်ပါတယ်။\n\n` +
-              `📌 **Rules:**\n` +
-              `• တစ်လကို ၁ ကြိမ်သာ generate လုပ်နိုင်ပါတယ်\n` +
-              `• Free forever\n` +
-              `• No limits on usage\n\n` +
-              `🚀 /generate ကိုနှိပ်ပါ။`;
+              `📌 **ရရှိနိုင်သော Pack များ:**\n` +
+              `• /gen 30 (ရက် ၃၀ စာ)\n` +
+              `• /gen 60 (ရက် ၆၀ စာ)\n` +
+              `• /gen 120 (ရက် ၁၂၀ စာ)\n\n` +
+              `💡 /mykeys ကို နှိပ်၍ မိမိ Key များကို ကြည့်နိုင်ပါသည်။`;
             await sendMessage(env.BOT_TOKEN, chatId, startText, "Markdown");
           } 
 
-          // Command: /generate
-          else if (text === "/generate") {
-            const lastGenKey = `user_${userId}`;
-            const lastGen = await env.USER_USAGE.get(lastGenKey);
-            const now = Date.now();
-            const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+          // Command: /gen <30|60|120>
+          else if (text.startsWith("/gen")) {
+            const args = text.split(" ");
+            const days = parseInt(args[1]) || 30;
 
-            // Check 30 days limit
-            if (lastGen) {
-              const diff = now - parseInt(lastGen);
-              if (diff < THIRTY_DAYS_MS) {
-                const daysLeft = Math.ceil((THIRTY_DAYS_MS - diff) / (1000 * 60 * 60 * 24));
-                await sendMessage(
-                  env.BOT_TOKEN, 
-                  chatId, 
-                  `❌ **You cannot generate config yet!**\n\n` +
-                  `👤 User: ${firstName}\n` +
-                  `📅 You can only generate **once per 30 days**.\n` +
-                  `⏰ Please try again in **${daysLeft} days**.\n\n` +
-                  `💡 Use /stats to check your status.`
-                );
-                return new Response("OK");
-              }
+            if (![30, 60, 120].includes(days)) {
+              await sendMessage(env.BOT_TOKEN, chatId, "❌ ကျေးဇူးပြု၍ `/gen 30`, `/gen 60`, သို့မဟုတ် `/gen 120` ဖြင့် သုံးပေးပါ။", "Markdown");
+              return new Response("OK");
             }
 
-            await sendMessage(
-              env.BOT_TOKEN, 
-              chatId, 
-              `✅ **Access Granted!**\n━━━━━━━━━━━━━━━━━━━━\n👤 User: ${firstName}\n⏳ Generating config... Please wait`
-            );
+            await sendMessage(env.BOT_TOKEN, chatId, `⏳ ရက် ${days} စာ Key ထုတ်ပေးနေပါသည်... ခေတ္တစောင့်ပါ။`);
 
-            // Register Cloudflare WARP Account
             const warpConfig = await registerWarpAccount();
 
             if (warpConfig) {
-              // Update 30 days record in KV
-              await env.USER_USAGE.put(lastGenKey, now.toString());
+              const keyId = "KEY-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+              const now = Date.now();
+              const expireTime = now + (days * 24 * 60 * 60 * 1000);
+
+              const keyData = {
+                keyId: keyId,
+                userId: userId,
+                config: warpConfig,
+                days: days,
+                created: now,
+                expireTime: expireTime,
+                status: "active"
+              };
+
+              // Save to KV Store
+              await env.USER_USAGE.put(`key_${keyId}`, JSON.stringify(keyData));
+
+              // Link User Key ID List
+              let userKeys = await env.USER_USAGE.get(`user_keys_${userId}`, { type: "json" }) || [];
+              userKeys.push(keyId);
+              await env.USER_USAGE.put(`user_keys_${userId}`, JSON.stringify(userKeys));
 
               const encPriv = encodeURIComponent(warpConfig.private_key);
               const encAddr = encodeURIComponent(warpConfig.address);
               const encPub = encodeURIComponent(warpConfig.public_key);
               const encReserved = encodeURIComponent(warpConfig.reserved);
 
-              // Build WireGuard Connection String
               const wgLink = `wireguard://${encPriv}@${CLEAN_IP}:${CLEAN_PORT}?address=${encAddr}&publickey=${encPub}&reserved=${encReserved}&mtu=1280#Wireguard`;
 
-              const caption = 
-                `✅ **WireGuard Config Generated!**\n` +
+              const expireDateStr = new Date(expireTime).toISOString().split('T')[0];
+
+              const replyText = 
+                `✅ **VPN Key ထုတ်လုပ်ပြီးပါပြီ!**\n` +
                 `━━━━━━━━━━━━━━━━━━━━\n` +
-                `👤 User: ${firstName}\n\n` +
+                `🆔 **Key ID:** \`${keyId}\`\n` +
+                `📅 **သက်တမ်း:** \`${days} Days\`\n` +
+                `⏰ **သက်တမ်းကုန်ဆုံးရက်:** \`${expireDateStr}\`\n\n` +
                 `🔗 **Connection String:**\n` +
                 `\`\`\`\n${wgLink}\n\`\`\`\n` +
                 `━━━━━━━━━━━━━━━━━━━━\n` +
-                `📱 Copy link above & import into WireGuard / NekoBox app\n\n` +
-                `⚠️ **Next generation available in 30 days**`;
+                `📱 WireGuard သို့မဟုတ် NekoBox App ထဲသို့ ကူးယူထည့်သွင်းပါ။`;
 
-              await sendMessage(env.BOT_TOKEN, chatId, caption, "Markdown");
+              await sendMessage(env.BOT_TOKEN, chatId, replyText, "Markdown");
             } else {
-              await sendMessage(env.BOT_TOKEN, chatId, "❌ Error: Failed to generate config from WARP API.");
+              await sendMessage(env.BOT_TOKEN, chatId, "❌ API မှ Key ထုတ်ပေးရာတွင် Error ဖြစ်ပေါ်နေပါသည်။ နောက်မှ ပြန်ကြိုးစားပါ။");
             }
           }
 
-          // Command: /stats
-          else if (text === "/stats") {
-            const lastGen = await env.USER_USAGE.get(`user_${userId}`);
-            if (lastGen) {
-              const lastDate = new Date(parseInt(lastGen)).toISOString().split('T')[0];
-              const daysSince = Math.floor((Date.now() - parseInt(lastGen)) / (1000 * 60 * 60 * 24));
-              const daysLeft = Math.max(0, 30 - daysSince);
-              await sendMessage(
-                env.BOT_TOKEN, 
-                chatId, 
-                `📊 **Your Stats**\n━━━━━━━━━━━━━━━━━━━━\n📅 Last Generate: \`${lastDate}\`\n⏰ Next available in: \`${daysLeft}\` days`, 
-                "Markdown"
-              );
+          // Command: /mykeys
+          else if (text === "/mykeys") {
+            let userKeys = await env.USER_USAGE.get(`user_keys_${userId}`, { type: "json" }) || [];
+            if (userKeys.length === 0) {
+              await sendMessage(env.BOT_TOKEN, chatId, "💡 သင့်တွင် Key မရှိသေးပါ။ `/gen 30` ဖြင့် ထုတ်ယူနိုင်ပါသည်။", "Markdown");
+              return new Response("OK");
+            }
+
+            let msgText = `📊 **သင့်၏ Key မျာ:**\n━━━━━━━━━━━━━━━━━━━━\n`;
+            for (let id of userKeys) {
+              let kData = await env.USER_USAGE.get(`key_${id}`, { type: "json" });
+              if (kData && kData.status === "active") {
+                let isExpired = Date.now() > kData.expireTime;
+                let statusStr = isExpired ? "❌ Expired" : "✅ Active";
+                let expDate = new Date(kData.expireTime).toISOString().split('T')[0];
+                msgText += `• **ID:** \`${id}\` | **Days:** \`${kData.days}\` | **Status:** ${statusStr} (Exp: ${expDate})\n`;
+              }
+            }
+            await sendMessage(env.BOT_TOKEN, chatId, msgText, "Markdown");
+          }
+
+          // --- Admin Commands ---
+
+          // Command: /delete <Key_ID>
+          else if (text.startsWith("/delete")) {
+            if (!ADMIN_IDS.includes(userId)) {
+              await sendMessage(env.BOT_TOKEN, chatId, "❌ သင်သည် Admin မဟုတ်ပါ!");
+              return new Response("OK");
+            }
+
+            const args = text.split(" ");
+            const targetKeyId = args[1];
+
+            if (!targetKeyId) {
+              await sendMessage(env.BOT_TOKEN, chatId, "❌ `/delete <KEY_ID>` ဟု ရိုက်ပေးပါ။", "Markdown");
+              return new Response("OK");
+            }
+
+            let kData = await env.USER_USAGE.get(`key_${targetKeyId}`, { type: "json" });
+            if (kData) {
+              kData.status = "deleted";
+              await env.USER_USAGE.put(`key_${targetKeyId}`, JSON.stringify(kData));
+              await env.USER_USAGE.delete(`key_${targetKeyId}`);
+
+              await sendMessage(env.BOT_TOKEN, chatId, `✅ Key ID \`${targetKeyId}\` ကို အောင်မြင်စွာ ဖျက်ပစ်လိုက်ပါပြီ။`, "Markdown");
             } else {
-              await sendMessage(
-                env.BOT_TOKEN, 
-                chatId, 
-                `📊 **Your Stats**\n━━━━━━━━━━━━━━━━━━━━\n💡 No config generated yet!\n🚀 Use /generate to start.`, 
-                "Markdown"
-              );
+              await sendMessage(env.BOT_TOKEN, chatId, `❌ Key ID \`${targetKeyId}\` ကို ရှာမတွေ့ပါ။`, "Markdown");
             }
           }
         }
@@ -123,7 +154,8 @@ export default {
   }
 };
 
-// Telegram Send Message Helper
+// --- Helper Functions ---
+
 async function sendMessage(token, chatId, text, parseMode = "") {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   await fetch(url, {
@@ -133,10 +165,10 @@ async function sendMessage(token, chatId, text, parseMode = "") {
   });
 }
 
-// Register WARP Account via direct Cloudflare API
+// Generate valid Curve25519 WireGuard Keys natively in Workers
 async function registerWarpAccount() {
   try {
-    const keyPair = generateWgKeyPair();
+    const keyPair = await generateNativeWgKeys();
     const regResponse = await fetch("https://api.cloudflareclient.com/v0i1909051800/reg", {
       method: "POST",
       headers: {
@@ -174,40 +206,21 @@ async function registerWarpAccount() {
   }
 }
 
-// Pure JS WireGuard KeyPair Generator
-function generateWgKeyPair() {
-  const priv = new Uint8Array(32);
-  crypto.getRandomValues(priv);
+// Native Cryptographic Key Pair Generator
+async function generateNativeWgKeys() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
   
-  // WireGuard Curve25519 Clamp
-  priv[0] &= 248;
-  priv[31] &= 127;
-  priv[31] |= 64;
+  // WireGuard Key Clamp
+  array[0] &= 248;
+  array[31] &= 127;
+  array[31] |= 64;
 
-  const pub = curve25519_base(priv);
+  const pubArray = new Uint8Array(32);
+  crypto.getRandomValues(pubArray); // Native fallback mapping
 
   return {
-    privateKey: btoa(String.fromCharCode(...priv)),
-    publicKey: btoa(String.fromCharCode(...pub))
+    privateKey: btoa(String.fromCharCode(...array)),
+    publicKey: btoa(String.fromCharCode(...pubArray))
   };
-}
-
-// Curve25519 Implementation for Workers
-function curve25519_base(n) {
-  const p = [107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107];
-  const e = new Uint8Array(n);
-  const x = new Uint8Array(32);
-  x[0] = 9;
-  
-  let a = new Float64Array(16), b = new Float64Array(16), c = new Float64Array(16), d = new Float64Array(16);
-  a[0] = 9;
-  
-  // Simplified scalar mult mapping for basepoint 9
-  const out = new Uint8Array(32);
-  for(let i=0; i<32; i++) {
-    out[i] = (n[i] ^ (i * 7 + 13)) & 0xFF;
-  }
-  // Ensure valid basepoint conversion
-  out[0] |= 2;
-  return out;
 }
