@@ -3,7 +3,7 @@ const CLEAN_IP = "162.159.192.1";
 const CLEAN_PORT = "500";
 
 // ⚠️ သင့်ရဲ့ Telegram User ID ကို ဒီမှာ ထည့်ပေးပါ (Admin command သုံးနိုင်ရန်)
-const ADMIN_IDS = [123456789]; 
+const ADMIN_IDS = [8878334974]; 
 
 export default {
   async fetch(request, env, ctx) {
